@@ -1,0 +1,154 @@
+name: JSON Editor Release
+
+# Trigger on push of version tags
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  # Update this to your binary name
+  BINARY_NAME: json-editor
+  # Update this to your GitHub repository description
+  REPO_DESCRIPTION: "A TUI-based JSON editor built with Rust and Ratatui - Create and edit JSON files with an intuitive interface"
+
+jobs:
+  # Job to create GitHub Release
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: JSON Editor ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            # JSON Editor ${{ github.ref_name }}
+            
+            A terminal-based JSON editor built with Rust and Ratatui.
+            
+            ## Features
+            
+            - Intuitive Terminal User Interface (TUI)
+            - Real-time JSON validation
+            - Key-value pair editing
+            - Automatic JSON formatting
+            - Cross-platform support
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform:
+            - Windows: `json-editor-windows.exe`
+            - macOS: `json-editor-macos`
+            - Linux: `json-editor-linux`
+            
+            ## Usage
+            
+            Run the binary from your terminal:
+            ```bash
+            ./json-editor
+            ```
+            
+            Navigation:
+            - Arrow keys to move
+            - Enter to edit
+            - Esc to exit edit mode
+            - Ctrl+c to quit
+            
+            ## Changes in this Release
+            
+            See the automatically generated release notes below for detailed changes.
+
+  # Job to build for different platforms
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: linux
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macos
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows
+            extension: .exe
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Build binary
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+
+      - name: Prepare binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ../../../${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz ${{ env.BINARY_NAME }}
+          echo "ASSET=target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}" >> $GITHUB_ENV
+          echo "ASSET_ARCHIVE=${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz" >> $GITHUB_ENV
+
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ env.BINARY_NAME }}-${{ matrix.name }}.zip ${{ env.BINARY_NAME }}${{ matrix.extension }}
+          echo "ASSET=target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}${{ matrix.extension }}" >> $env:GITHUB_ENV
+          echo "ASSET_ARCHIVE=${{ env.BINARY_NAME }}-${{ matrix.name }}.zip" >> $env:GITHUB_ENV
+
+      - name: Generate SHA-256
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            certutil -hashfile ${{ env.ASSET_ARCHIVE }} SHA256 | grep -v "hash" | grep -v "CertUtil" > ${{ env.ASSET_ARCHIVE }}.sha256
+          else
+            shasum -a 256 ${{ env.ASSET_ARCHIVE }} > ${{ env.ASSET_ARCHIVE }}.sha256
+          fi
+
+      # Upload release assets
+      - name: Update Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.ASSET_ARCHIVE }}
+            ${{ env.ASSET_ARCHIVE }}.sha256
+
+  # Job to update repository description and topics
+  update-repo-info:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update repository description
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.repos.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              description: process.env.REPO_DESCRIPTION,
+              topics: ['rust', 'json-editor', 'tui', 'ratatui', 'terminal', 'cli', 'json']
+            })
