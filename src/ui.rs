@@ -1,12 +1,12 @@
+use crate::app::{App, CurrentScreen, CurrentlyEditing};
+use rand::Rng;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-
-use crate::app::{App, CurrentScreen, CurrentlyEditing};
 
 pub fn ui(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -20,6 +20,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     let title_block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .style(Style::default());
 
     let title = Paragraph::new(Text::styled(
@@ -34,13 +35,20 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     for (key, value) in app.key_value_pairs.iter() {
         list_items.push(ListItem::new(Line::from(Span::styled(
-            format!("{: <25} : {}", key, value),
-            Style::default().fg(Color::Yellow),
+            format!("{: <8} : {}", key, value),
+            Style::default().fg(Color::Black),
         ))));
     }
 
-    let list = List::new(list_items);
-    frame.render_widget(list, chunks[1]);
+    let center_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(15), Constraint::Percentage(85)])
+        .split(chunks[1]);
+
+    let list = List::new(list_items).style(Style::default().bg(Color::White));
+    frame.render_widget(list, center_chunks[0]);
+
+    ui_visualizer(frame, app, center_chunks[1]);
 
     let current_navigation_text = vec![
         match app.current_screen {
@@ -170,4 +178,43 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn ui_visualizer(frame: &mut Frame, _app: &App, area: Rect) {
+    let bar_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            std::iter::repeat(Constraint::Percentage(10))
+                .take(10)
+                .collect::<Vec<_>>(),
+        )
+        .split(area);
+
+    let mut rng = rand::thread_rng();
+
+    // Create and render each bar
+    for chunk in bar_chunks.iter() {
+        // Create a smaller chunk to add spacing between bars
+        let bar_area = Rect::new(
+            chunk.x + 1, // Add 1 for spacing on left
+            chunk.y,
+            chunk.width - 2, // Subtract 2 for spacing on both sides
+            chunk.height,
+        );
+
+        // Generate random height (between 10% and 100% of available height)
+        let height_percentage = rng.gen_range(10..=100);
+        let bar_height = (bar_area.height as f32 * (height_percentage as f32 / 100.0)) as u16;
+
+        // Calculate the y position to align the bar to the bottom
+        let bar_y = bar_area.y + (bar_area.height - bar_height);
+
+        // Create the actual bar area
+        let bar_rect = Rect::new(bar_area.x, bar_y, bar_area.width, bar_height);
+
+        // Create and render the bar
+        let bar = Block::default().style(Style::default().bg(Color::Green));
+
+        frame.render_widget(bar, bar_rect);
+    }
 }
